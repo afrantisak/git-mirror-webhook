@@ -8,6 +8,8 @@ import flask
 import flask.ext
 import flask.ext.cors
 
+_defurl = 'git@github.com:afrantisak/gitmirror.git'
+
 def log(text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     print("{timestamp}: {message}".format(timestamp = timestamp, message = text))
@@ -38,7 +40,7 @@ class Application():
         self.pull()
 
     def create_or_use(self):
-        repo_path = config['repo_path']
+        repo_path = self.config.repo_path
         if not os.path.exists(repo_path):
             _mkdir(repo_path)
             repo = git.Repo.init(repo_path)
@@ -47,9 +49,8 @@ class Application():
         try:
             repo.remotes.origin
         except:
-            remote = config['repo_remote']
-            name = remote['name']
-            url = remote['url']
+            name = self.config.repo_remote_name
+            url = self.config.repo_remote_url
             log("creating remote {name} => {url}".format(**locals()))
             repo.create_remote(name, url)
         return repo
@@ -64,11 +65,13 @@ class Application():
         master.checkout()
         
 def git_hook_service(config):
-    rest_service = flask.Flask(config['app_name'])
+    rest_service = flask.Flask(config.app_name)
 
-    # load ssl certificate for https
-    context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-    context.load_cert_chain(config['ssl_cert_filepath'], config['ssl_key_filepath'])
+    ssl_context = None
+    if config.service_https:
+        # load ssl certificate for https
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        ssl_context.load_cert_chain(config.ssl_cert_filepath, config.ssl_key_filepath)
 
     # set up cross-origin resource sharing (CORS)
     cors = flask.ext.cors.CORS(rest_service, allow_headers='X-Requested-With')
@@ -82,35 +85,37 @@ def git_hook_service(config):
     def commit_hook():
         data = json.loads(flask.request.data)
         auth = flask.request.authorization
-        if auth['username'] != config['auth_username'] or auth['password'] != config['auth_password']:
+        if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
         application.pull()
         return ''
 
-    log("starting service on {host}:{port}".format(host=config['service_host'], port=config['service_port']))
+    # run the service
+    log("starting service on {host}:{port}".format(host=config.service_host, port=config.service_port))
     log("configuration:")
-    for key in sorted(config):
-        log("   {key}: {value}".format(key=key, value=config[key]))
-    return rest_service.run(host=config['service_host'], port=config['service_port'], debug=config['debug'], ssl_context = context)
+    configkeys = vars(config)
+    for key in sorted(configkeys):
+        log("   {key}: {value}".format(key=key, value=configkeys[key]))
+    return rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, ssl_context = ssl_context)
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("repo_path", help="/path/to/repo")
+    parser.add_argument('--app_name',          default='gitmirror',     help="name that flask uses")
+    parser.add_argument('--service-host',      default='0.0.0.0',       help="service listen host")
+    parser.add_argument('--service-port',      default=8080,            help="service listen port")
+    parser.add_argument('--service-https',     default=False,           help="service use https if True, http otherwise", action='store_true')
+    parser.add_argument('--repo-path',         default='test/testrepo', help="repo path (create if not exists)")
+    parser.add_argument('--repo-remote-name',  default='origin',        help="repo remote name to checkout (create if not exists)")
+    parser.add_argument('--repo-remote-url',   default=_defurl,         help="repo remote url (used to create remote if not exists)")
+    parser.add_argument('--repo-branch',       default='master',        help="repo branch to checkout")
+    parser.add_argument('--ssl-cert-filepath', default='test/ssl.cert', help="ssl cert filename")
+    parser.add_argument('--ssl-key-filepath',  default='test/ssl.key',  help="ssl key filename")
+    parser.add_argument('--auth-username',     default='username',      help="authentication username")
+    parser.add_argument('--auth-password',     default='password',      help="authentication password")
+    parser.add_argument('--debug',             default=False,           help="use flask debug mode", action='store_true')
     args = parser.parse_args()
 
-    config = {'app_name': 'git_mirror',
-              'service_host': '0.0.0.0',
-              'service_port': 8080,
-              'repo_path': args.repo_path,
-              'repo_remote': {'name': 'origin', 'url': 'git@github.com:afrantisak/gitmirror.git'},
-              'repo_branch': 'master',
-              'ssl_cert_filepath': 'test/ssl.cert',
-              'ssl_key_filepath':  'test/ssl.key',
-              'auth_username': 'username',
-              'auth_password': 'password',
-              'debug': True,
-    }
-    git_hook_service(config)
+    git_hook_service(args)
 
