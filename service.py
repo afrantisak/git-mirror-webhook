@@ -2,26 +2,67 @@
 import os
 import git
 import ssl
+import time
+import json
 import flask
 import flask.ext
 import flask.ext.cors
-import requests
-import json
 
 def log(text):
-    timestamp = time.strftime("%Y-%M-%d %H:%m:%S")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     print("{timestamp}: {message}".format(timestamp = timestamp, message = text))
+
+def _mkdir(newdir):
+    """works the way a good mkdir should :)
+        - already exists, silently complete
+        - regular file in the way, raise an exception
+        - parent directory(ies) does not exist, make them as well
+    """
+    if os.path.isdir(newdir):
+        pass
+    elif os.path.isfile(newdir):
+        raise OSError("a file with the same name as the desired " \
+                      "dir, '%s', already exists." % newdir)
+    else:
+        head, tail = os.path.split(newdir)
+        if head and not os.path.isdir(head):
+            _mkdir(head)
+        #print "_mkdir %s" % repr(newdir)
+        if tail:
+            os.mkdir(newdir)
 
 class Application():
     def __init__(self, config):
         self.config = config
-        self.repo = git.Repo(config['repo_path'])
+        self.repo = self.create_or_use()
+        self.pull()
+
+    def create_or_use(self):
+        repo_path = config['repo_path']
+        if not os.path.exists(repo_path):
+            _mkdir(repo_path)
+            repo = git.Repo.init(repo_path)
+        else:
+            repo = git.Repo(repo_path)
+        try:
+            repo.remotes.origin
+        except:
+            remote = config['repo_remote']
+            name = remote['name']
+            url = remote['url']
+            log("creating remote {name} => {url}".format(**locals()))
+            repo.create_remote(name, url)
+        return repo
 
     def pull(self):
-        log('pull from {repo_path} starting'.format(repo_path=config['repo_path']))
-        self.repo.remotes.origin.pull(**{'ff-only': True})
-        log('pull from {repo_path} complete'.format(repo_path=config['repo_path']))
-
+        origin = self.repo.remotes.origin
+        log('pulling')
+        origin.pull(**{'ff-only': True})
+        log('checkout')
+        master = self.repo.create_head('master', origin.refs.master)
+        master.set_tracking_branch(origin.refs.master)
+        master.checkout()
+        
 def git_hook_service(config):
     rest_service = flask.Flask(config['app_name'])
 
@@ -39,79 +80,37 @@ def git_hook_service(config):
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
     @flask.ext.cors.cross_origin()
     def commit_hook():
-        data = lib.codec.decode(flask.request.data)
+        data = json.loads(flask.request.data)
         auth = flask.request.authorization
-        if auth['username'] != config['username'] or auth['password'] != config['password']:
+        if auth['username'] != config['auth_username'] or auth['password'] != config['auth_password']:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
-        application.fetch()
+        application.pull()
         return ''
 
-    log("starting service on {host}:{port}".format(host=config['host'], port=config['port']))
+    log("starting service on {host}:{port}".format(host=config['service_host'], port=config['service_port']))
     log("configuration:")
-    for key in config:
-        log("   {key}: {value}".format(key=key, value=config['key']))
-    return rest_service.run(host=config['host'], port=config['port'], debug=True, ssl_context = context)
-
-def bitbucket_hook_test(url = "https://user:password@localhost:8080/commit_hook"):
-    data = {
-        "canon_url": "https://bitbucket.org",
-        "commits": [
-            {
-                "author": "marcus",
-                "branch": "master",
-                "files": [
-                    {
-                        "file": "somefile.py",
-                        "type": "modified"
-                    }
-                ],
-                "message": "Added some more things to somefile.py\n",
-                "node": "620ade18607a",
-                "parents": [
-                    "702c70160afc"
-                ],
-                "raw_author": "Marcus Bertrand <marcus@somedomain.com>",
-                "raw_node": "620ade18607ac42d872b568bb92acaa9a28620e9",
-                "revision": None,
-                "size": -1,
-                "timestamp": "2012-05-30 05:58:56",
-                "utctimestamp": "2012-05-30 03:58:56+00:00"
-            }
-        ],
-        "repository": {
-            "absolute_url": "/marcus/project-x/",
-            "fork": False,
-            "is_private": True,
-            "name": "Project X",
-            "owner": "marcus",
-            "scm": "git",
-            "slug": "project-x",
-            "website": "https://atlassian.com/"
-        },
-        "user": "marcus"
-    }
-    result = requests.post(url, data = json.dumps(data), verify=False)
-    print result.text
+    for key in sorted(config):
+        log("   {key}: {value}".format(key=key, value=config[key]))
+    return rest_service.run(host=config['service_host'], port=config['service_port'], debug=config['debug'], ssl_context = context)
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_path", help="/path/to/repo")
-    parser.add_argument("--test-bitbucket-commit-hook", help = "post sample bitbucket commit hook data to this url")
     args = parser.parse_args()
 
-    if args.test_bitbucket_commit_hook:
-        bitbucket_hook_test(args.test_bitbucket_commit_hook)
-    else:
-        config = {'app_name': 'git_mirror',
-                  'host': '0.0.0.0',
-                  'port': 8080,
-                  'repo_path': args.repo_path,
-                  'ssl_cert_filepath': 'credentials/ssl.cert',
-                  'ssl_key_filepath':  'credentials/ssl.key',
-                  'username': 'whytehmg',
-                  'password': 'griffey24',
-        }
-        git_hook_service(config)
+    config = {'app_name': 'git_mirror',
+              'service_host': '0.0.0.0',
+              'service_port': 8080,
+              'repo_path': args.repo_path,
+              'repo_remote': {'name': 'origin', 'url': 'git@github.com:afrantisak/gitmirror.git'},
+              'repo_branch': 'master',
+              'ssl_cert_filepath': 'test/ssl.cert',
+              'ssl_key_filepath':  'test/ssl.key',
+              'auth_username': 'username',
+              'auth_password': 'password',
+              'debug': True,
+    }
+    git_hook_service(config)
 
