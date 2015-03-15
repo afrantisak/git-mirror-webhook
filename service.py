@@ -87,7 +87,11 @@ def git_hook_service(config):
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
     @flask.ext.cors.cross_origin()
     def commit_hook():
-        data = json.loads(flask.request.data)
+        data = json.loads(flask.request.form['payload'])
+        commits = data['commits']
+        for commit in commits:
+            branch = commit['branch']
+            log("BRANCH: {branch}".format(**locals()))
         auth = flask.request.authorization
         if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
@@ -102,8 +106,8 @@ if __name__ == "__main__":
     defurl = 'http://github.com/afrantisak/git-mirror-webhook.git'
 
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--app_name',          default='git-mirror-webhook', help="name that flask uses")
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    parser.add_argument('--app-name',          default='git-mirror-webhook', help="name that flask uses")
     parser.add_argument('--service-host',      default='0.0.0.0',            help="service listen host")
     parser.add_argument('--service-port',      default=8080,                 help="service listen port")
     parser.add_argument('--service-https',     default=False,                help="service use https if True, http otherwise", action='store_true')
