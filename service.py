@@ -99,7 +99,7 @@ def git_hook_service(config):
     return rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, ssl_context = ssl_context)
 
 if __name__ == "__main__":
-    defurl = 'git@github.com:afrantisak/git-mirror-webhook.git'
+    defurl = 'http://github.com/afrantisak/git-mirror-webhook.git'
 
     import argparse
     parser = argparse.ArgumentParser()
