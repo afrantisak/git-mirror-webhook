@@ -7,6 +7,7 @@ import json
 import flask
 import flask.ext
 import flask.ext.cors
+import collections
 
 def log(text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -95,7 +96,7 @@ def git_hook_service(config):
         commits = data['commits']
         acceptable_commits = collections.defaultdict(list)
         for commit in commits:
-            acceptable = commit['author'] in config.ignore_commits_by
+            acceptable = commit['author'] not in config.ignore_commits_by
             acceptable_commits[acceptable].append(commit)
             branch = commit['branch']
             author = commit['author']
