@@ -58,7 +58,7 @@ class Application():
             repo.create_remote(name, url)
         return repo
 
-    def pull(self):
+    def pull(self, commits = None):
         origin = self.repo.remotes.origin
         log('pulling {self.config.repo_remote_url}'.format(**locals()))
         origin.pull(**{'ff-only': True})
@@ -87,16 +87,24 @@ def git_hook_service(config):
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
     @flask.ext.cors.cross_origin()
     def commit_hook():
-        data = json.loads(flask.request.form['payload'])
-        commits = data['commits']
-        for commit in commits:
-            branch = commit['branch']
-            log("BRANCH: {branch}".format(**locals()))
         auth = flask.request.authorization
         if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
-        application.pull()
+        data = json.loads(flask.request.form['payload'])
+        commits = data['commits']
+        acceptable_commits = collections.defaultdict(list)
+        for commit in commits:
+            acceptable = commit['author'] in config.ignore_commits_by
+            acceptable_commits[acceptable].append(commit)
+            branch = commit['branch']
+            author = commit['author']
+            log("BRANCH: {branch}".format(**locals()))
+            log("AUTHOR: {author}".format(**locals()))
+        for commit in acceptable_commits[False]:
+            log("IGNORING commit {node} because author is {author}".format(node=commit['node'], author=commit['author']))
+        if len(acceptable_commits[True]):
+            application.pull(acceptable_commits[True])
         return ''
 
     log("starting service on {host}:{port}".format(host=config.service_host, port=config.service_port))
@@ -120,6 +128,7 @@ if __name__ == "__main__":
     parser.add_argument('--auth-username',     default='username',           help="authentication username")
     parser.add_argument('--auth-password',     default='password',           help="authentication password")
     parser.add_argument('--debug',             default=False,                help="use flask debug mode", action='store_true')
+    parser.add_argument('--ignore-commits-by', nargs='*',                    help="ignore commits by these authors")
     args = parser.parse_args()
 
     git_hook_service(args)
