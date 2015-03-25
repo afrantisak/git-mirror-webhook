@@ -12,26 +12,28 @@ def log(text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     print("{timestamp}: {message}".format(timestamp = timestamp, message = text))
 
-def use_or_create_repo(repo_path):
-    try:
-        repo = git.Repo(repo_path)
-    except:
-        log("Repository does not exist.  Attempting to initialize new repo")
-        repo = git.Repo.init(repo_path)
-    return repo
-
-def use_or_create_repo_remote(repo, remote_name, remote_url):
-    try:
-        repo.remotes[remote_name]
-    except:
-        log("creating remote {remote_name} => {remote_url}".format(**locals()))
-        repo.create_remote(remote_name, remote_url)
-
 class Repository():
+    @staticmethod
+    def use_or_create_repo(repo_path):
+        try:
+            repo = git.Repo(repo_path)
+        except:
+            log("Repository does not exist.  Attempting to initialize new repo in {repo_path}".format(**locals()))
+            repo = git.Repo.init(repo_path)
+        return repo
+
+    @staticmethod
+    def use_or_create_repo_remote(repo, remote_name, remote_url):
+        try:
+            repo.remotes[remote_name]
+        except:
+            log("creating remote {remote_name} => {remote_url}".format(**locals()))
+            repo.create_remote(remote_name, remote_url)
+
     def __init__(self, config):
         self.config = config
-        self.repo = use_or_create_repo(self.config.repo_path)
-        use_or_create_repo_remote(self.repo, self.config.repo_remote_name, self.config.repo_remote_url)
+        self.repo = self.use_or_create_repo(self.config.repo_path)
+        self.use_or_create_repo_remote(self.repo, self.config.repo_remote_name, self.config.repo_remote_url)
 
     def pull(self, commits = None):
         origin = self.repo.remotes.origin
@@ -77,6 +79,8 @@ def git_hook_service(config):
             log("AUTHOR: {author}".format(**locals()))
         for commit in acceptable_commits[False]:
             log("IGNORING commit {node} because author is {author}".format(node=commit['node'], author=commit['author']))
+        for commit in acceptable_commits[True]:
+            log("accepting commit {node}".format(node=commit['node']))
         if len(acceptable_commits[True]):
             repository.pull(acceptable_commits[True])
         return ''
