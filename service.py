@@ -6,6 +6,7 @@ import ssl
 import time
 import json
 import flask
+import collections
 
 def log(text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -32,7 +33,7 @@ class Repository():
         self.repo = use_or_create_repo(self.config.repo_path)
         use_or_create_repo_remote(self.repo, self.config.repo_remote_name, self.config.repo_remote_url)
 
-    def pull(self):
+    def pull(self, commits = None):
         origin = self.repo.remotes.origin
         log('pulling {self.config.repo_remote_url}'.format(**locals()))
         origin.pull(**{'ff-only': True})
@@ -60,12 +61,24 @@ def git_hook_service(config):
 
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
     def commit_hook():
-        data = json.loads(flask.request.data)
         auth = flask.request.authorization
         if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
-        repository.pull()
+        data = json.loads(flask.request.form['payload'])
+        commits = data['commits']
+        acceptable_commits = collections.defaultdict(list)
+        for commit in commits:
+            acceptable = commit['author'] not in config.ignore_commits_by
+            acceptable_commits[acceptable].append(commit)
+            branch = commit['branch']
+            author = commit['author']
+            log("BRANCH: {branch}".format(**locals()))
+            log("AUTHOR: {author}".format(**locals()))
+        for commit in acceptable_commits[False]:
+            log("IGNORING commit {node} because author is {author}".format(node=commit['node'], author=commit['author']))
+        if len(acceptable_commits[True]):
+            repository.pull(acceptable_commits[True])
         return ''
 
     log("starting service on {host}:{port}".format(host=config.service_host, port=config.service_port))
@@ -75,8 +88,8 @@ def main():
     defurl = 'http://github.com/afrantisak/git-mirror-webhook.git'
 
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--app_name',          default='git-mirror-webhook', help="name that flask uses")
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    parser.add_argument('--app-name',          default='git-mirror-webhook', help="name that flask uses")
     parser.add_argument('--service-host',      default='0.0.0.0',            help="service listen host")
     parser.add_argument('--service-port',      default=8080,                 help="service listen port")
     parser.add_argument('--service-https',     default=False,                help="service use https if True, http otherwise", action='store_true')
@@ -89,6 +102,7 @@ def main():
     parser.add_argument('--auth-username',     default='username',           help="authentication username")
     parser.add_argument('--auth-password',     default='password',           help="authentication password")
     parser.add_argument('--debug',             default=False,                help="use flask debug mode", action='store_true')
+    parser.add_argument('--ignore-commits-by', nargs='*',                    help="ignore commits by these authors")
     args = parser.parse_args()
 
     git_hook_service(args)
