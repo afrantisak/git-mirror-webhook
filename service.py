@@ -1,62 +1,36 @@
 #!/usr/bin/env python
 import os
+import sys
 import git
 import ssl
 import time
 import json
 import flask
-import flask.ext
-import flask.ext.cors
 
 def log(text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     print("{timestamp}: {message}".format(timestamp = timestamp, message = text))
 
-def _mkdir(newdir):
-    """works the way a good mkdir should :)
-        - already exists, silently complete
-        - regular file in the way, raise an exception
-        - parent directory(ies) does not exist, make them as well
-    """
-    if os.path.isdir(newdir):
-        pass
-    elif os.path.isfile(newdir):
-        raise OSError("a file with the same name as the desired " \
-                      "dir, '%s', already exists." % newdir)
-    else:
-        head, tail = os.path.split(newdir)
-        if head and not os.path.isdir(head):
-            _mkdir(head)
-        #print "_mkdir %s" % repr(newdir)
-        if tail:
-            os.mkdir(newdir)
+def use_or_create_repo(repo_path):
+    try:
+        repo = git.Repo(repo_path)
+    except:
+        log("Repository does not exist.  Attempting to initialize new repo")
+        repo = git.Repo.init(repo_path)
+    return repo
 
-class Application():
+def use_or_create_repo_remote(repo, remote_name, remote_url):
+    try:
+        repo.remotes[remote_name]
+    except:
+        log("creating remote {remote_name} => {remote_url}".format(**locals()))
+        repo.create_remote(remote_name, remote_url)
+
+class Repository():
     def __init__(self, config):
         self.config = config
-        self.repo = self.create_or_use()
-
-    def dump_config(self):
-        log("configuration:")
-        configkeys = vars(self.config)
-        for key in sorted(configkeys):
-            log("   {key}: {value}".format(key=key, value=configkeys[key]))
-
-    def create_or_use(self):
-        repo_path = self.config.repo_path
-        if not os.path.exists(repo_path):
-            _mkdir(repo_path)
-            repo = git.Repo.init(repo_path)
-        else:
-            repo = git.Repo(repo_path)
-        try:
-            repo.remotes.origin
-        except:
-            name = self.config.repo_remote_name
-            url = self.config.repo_remote_url
-            log("creating remote {name} => {url}".format(**locals()))
-            repo.create_remote(name, url)
-        return repo
+        self.repo = use_or_create_repo(self.config.repo_path)
+        use_or_create_repo_remote(self.repo, self.config.repo_remote_name, self.config.repo_remote_url)
 
     def pull(self):
         origin = self.repo.remotes.origin
@@ -68,6 +42,11 @@ class Application():
         master.checkout()
         
 def git_hook_service(config):
+    log("Configuration:")
+    configkeys = vars(config)
+    for key in sorted(configkeys):
+        log("   {key}: {value}".format(key=key, value=configkeys[key]))
+
     rest_service = flask.Flask(config.app_name)
 
     # load ssl certificate for https
@@ -76,29 +55,23 @@ def git_hook_service(config):
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         ssl_context.load_cert_chain(config.ssl_cert_filepath, config.ssl_key_filepath)
 
-    # set up cross-origin resource sharing (CORS)
-    cors = flask.ext.cors.CORS(rest_service, allow_headers='X-Requested-With')
-    rest_service.config['CORS_HEADERS'] = 'X-Requested-With'
-
-    application = Application(config)
-    application.dump_config()
-    application.pull()
+    repository = Repository(config)
+    repository.pull()
 
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
-    @flask.ext.cors.cross_origin()
     def commit_hook():
         data = json.loads(flask.request.data)
         auth = flask.request.authorization
         if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
-        application.pull()
+        repository.pull()
         return ''
 
     log("starting service on {host}:{port}".format(host=config.service_host, port=config.service_port))
     return rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, ssl_context = ssl_context)
 
-if __name__ == "__main__":
+def main():
     defurl = 'http://github.com/afrantisak/git-mirror-webhook.git'
 
     import argparse
@@ -120,3 +93,5 @@ if __name__ == "__main__":
 
     git_hook_service(args)
 
+if __name__ == "__main__":
+    sys.exit(main())
