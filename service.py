@@ -28,7 +28,7 @@ def git_hook_service(config):
         ssl_context.load_cert_chain(config.ssl_cert_filepath, config.ssl_key_filepath)
 
     repo = repository.Repository(config)
-    #repo.pull()
+    repo.pull()
 
     if config.app_cmd:
         app = application.Application(config.app_dir, config.app_cmd)
