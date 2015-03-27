@@ -2,6 +2,7 @@
 import os
 import sys
 import time
+import signal
 import subprocess
 
 def log(text):
@@ -19,15 +20,14 @@ class Application():
         log("Command {self.app_cmd}".format(**locals()))
         cwd = os.getcwd()
         os.chdir(self.app_dir)
-        process = subprocess.Popen(self.app_cmd)
+        process = subprocess.Popen(self.app_cmd, preexec_fn=os.setsid)
         log("Started pid {process.pid}".format(**locals()))
         os.chdir(cwd)
         return process
 
     def stop(self):
         log("Terminating pid {self.process.pid}".format(**locals()))
-        self.process.terminate()
-        time.sleep(3)
+        os.killpg(self.process.pid, signal.SIGTERM)
         return None
 
     def restart(self):

@@ -41,7 +41,6 @@ def git_hook_service(config):
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
         data = json_codec.decode(flask.request.form['payload'])
-        print data
         commits = data['commits']
         acceptable_commits = collections.defaultdict(list)
         for commit in commits:
@@ -63,12 +62,13 @@ def git_hook_service(config):
         return ''
 
     log("starting service on {host}:{port}".format(host=config.service_host, port=config.service_port))
-    return rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, 
+    ret = rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, 
                             ssl_context=ssl_context, use_reloader=False)
+    app.stop()
+    return ret
 
 def main():
     defurl = 'http://github.com/afrantisak/git-mirror-webhook.git'
-    #defcmd = "python -c 'while True: print 1'"
 
     import argparse
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
