@@ -3,9 +3,9 @@ import os
 import sys
 import ssl
 import time
-import json
 import flask
 import collections
+import json_codec
 import repository
 import application
 
@@ -32,7 +32,7 @@ def git_hook_service(config):
 
     if config.app_cmd:
         app = application.Application(config.app_dir, config.app_cmd)
-        app.start()
+        app.restart()
 
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
     def commit_hook():
@@ -40,7 +40,8 @@ def git_hook_service(config):
         if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
-        data = json.loads(flask.request.form['payload'])
+        data = json_codec.decode(flask.request.form['payload'])
+        print data
         commits = data['commits']
         acceptable_commits = collections.defaultdict(list)
         for commit in commits:
@@ -62,7 +63,8 @@ def git_hook_service(config):
         return ''
 
     log("starting service on {host}:{port}".format(host=config.service_host, port=config.service_port))
-    return rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, ssl_context = ssl_context)
+    return rest_service.run(host=config.service_host, port=config.service_port, debug=config.debug, 
+                            ssl_context=ssl_context, use_reloader=False)
 
 def main():
     defurl = 'http://github.com/afrantisak/git-mirror-webhook.git'
@@ -83,7 +85,7 @@ def main():
     parser.add_argument('--auth-username',     default='username',           help="authentication username")
     parser.add_argument('--auth-password',     default='password',           help="authentication password")
     parser.add_argument('--debug',             default=False,                help="use flask debug mode", action='store_true')
-    parser.add_argument('--ignore-commits-by', nargs='*',                    help="ignore commits by these authors")
+    parser.add_argument('--ignore-commits-by', nargs='*', default=[],        help="ignore commits by these authors")
     parser.add_argument('--app-dir',           default='test/testrepo',      help="application working dir")
     parser.add_argument('--app-cmd',           default=None,                 help="application command line")
     args = parser.parse_args()

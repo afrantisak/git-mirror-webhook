@@ -19,14 +19,15 @@ class Application():
         log("Command {self.app_cmd}".format(**locals()))
         cwd = os.getcwd()
         os.chdir(self.app_dir)
-        process = subprocess.Popen(self.app_cmd, shell=True)
+        process = subprocess.Popen(self.app_cmd)
         log("Started pid {process.pid}".format(**locals()))
         os.chdir(cwd)
         return process
 
     def stop(self):
-        log("Terminating pid {self.process.pid()}".format(**locals()))
+        log("Terminating pid {self.process.pid}".format(**locals()))
         self.process.terminate()
+        time.sleep(3)
         return None
 
     def restart(self):
