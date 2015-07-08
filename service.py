@@ -74,7 +74,7 @@ def main():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
     parser.add_argument('--hook-app-name',     default='git-mirror-webhook', help="name that flask uses")
     parser.add_argument('--service-host',      default='0.0.0.0',            help="service listen host")
-    parser.add_argument('--service-port',      default=8080,                 help="service listen port")
+    parser.add_argument('--service-port',      default=8080,  type=int,      help="service listen port")
     parser.add_argument('--service-https',     default=False,                help="service use https if True, http otherwise", action='store_true')
     parser.add_argument('--repo-path',         default='test/testrepo',      help="repo path (create if not exists)")
     parser.add_argument('--repo-remote-name',  default='origin',             help="repo remote name to checkout (create if not exists)")
