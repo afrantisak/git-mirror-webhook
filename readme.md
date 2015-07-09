@@ -7,7 +7,7 @@ Similar to https://github.com/dustin/gitmirror, but in python.
 # install
 ## virtualenv
     apt-get install python-virtualenv
-    virtualenv env
+    virtualenv --python=/usr/bin/python2 env
     source env/bin/activate
     pip install -r requirements
 
