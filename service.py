@@ -31,7 +31,8 @@ def git_hook_service(config):
     repo.pull()
 
     if config.app_cmd:
-        app = application.Application(config.app_dir, config.app_cmd)
+        app = application.Application(config.app_dir, config.app_cmd, config.app_init)
+        app.init()
         app.restart()
 
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
@@ -88,6 +89,7 @@ def main():
     parser.add_argument('--ignore-commits-by', nargs='*', default=[],        help="ignore commits by these authors")
     parser.add_argument('--app-dir',           default='test/testrepo',      help="application working dir")
     parser.add_argument('--app-cmd',           default=None,                 help="application command line")
+    parser.add_argument('--app-init',          default=None,                 help="application one-time initialization")
     args = parser.parse_args()
 
     git_hook_service(args)
