@@ -1,5 +1,9 @@
 ENV_NAME := env
 
+all: env
+
+clean: env-clean
+
 env: $(ENV_NAME)/bin/activate
 
 env-clean:
