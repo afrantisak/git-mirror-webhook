@@ -11,7 +11,7 @@ import application
 
 def log(text):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    print("{timestamp}: {message}".format(timestamp = timestamp, message = text))
+    print >>sys.stderr, "{timestamp}: {message}".format(timestamp = timestamp, message = text)
 
 def git_hook_service(config):
     log("Configuration:")
@@ -38,23 +38,28 @@ def git_hook_service(config):
     @rest_service.route("/bitbucket_commit_hook", methods=['POST'])
     def commit_hook():
         auth = flask.request.authorization
+        if config.auth_username and not auth:
+            log("Authorization required")
+            return ''
         if auth['username'] != config.auth_username or auth['password'] != config.auth_password:
             log("Invalid username/password: {username}/{password}".format(username=auth['username'], password=auth['password']))
             return ''
-        data = json_codec.decode(flask.request.form['payload'])
-        commits = data['commits']
+        data = flask.request.get_json()
+        changes = data['push']['changes']
         acceptable_commits = collections.defaultdict(list)
-        for commit in commits:
+        for change in changes:
+            commit = change['new']['target']
             acceptable = commit['author'] not in config.ignore_commits_by
             acceptable_commits[acceptable].append(commit)
-            branch = commit['branch']
-            author = commit['author']
+            branch = change['new']['name']
+            author = commit['author']['user']['username']
+            node = commit['hash']
             log("BRANCH: {branch}".format(**locals()))
             log("AUTHOR: {author}".format(**locals()))
         for commit in acceptable_commits[False]:
-            log("IGNORING commit {node} because author is {author}".format(node=commit['node'], author=commit['author']))
+            log("IGNORING commit {node} because author is {author}".format(node=node, author=author))
         for commit in acceptable_commits[True]:
-            log("accepting commit {node}".format(node=commit['node']))
+            log("accepting commit {node}".format(node=node))
         if not len(acceptable_commits[True]):
             return ''
         repo.pull(acceptable_commits[True])
